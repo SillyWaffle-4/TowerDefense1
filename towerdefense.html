@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate TD: Multi-Speed Edition</title>
+    <style>
+        body { text-align: center; background-color: #f0f0f0; font-family: sans-serif; margin: 0; overflow: hidden; }
+        #gameCanvas { border: 2px solid #333; background-color: #82f425; margin-top: 50px; cursor: crosshair; box-shadow: 0 0 20px rgba(0,0,0,0.2); }
+        .circular-button, .circle-button, .speed-button { width: 80px; height: 80px; border-radius: 50%; color: white; border: 2px solid #000; font-size: 14px; font-weight: bold; cursor: pointer; position: absolute; top: 15px; z-index: 20; transition: background 0.2s; }
+        .circular-button { background-color: #12acce; right: 100px; }
+        .circle-button { background-color: #12ce57; right: 10px; }
+        .speed-button { background-color: #f39c12; right: 190px; }
+        #shopcontainer { width: 260px; height: 450px; overflow-y: auto; background-color: #26dcaf; border: 3px solid #000; position: fixed; top: 100px; right: 20px; padding: 15px; display: none; z-index: 10; text-align: left; }
+        .buy-btn { padding: 8px; margin-bottom: 5px; background: #333; color: white; border: none; cursor: pointer; width: 100%; font-weight: bold; border-radius: 4px; font-size: 11px; }
+        #upgradeMenu { display: none; background: #2c3e50; color: white; padding: 15px; border: 3px solid #000; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 30; border-radius: 10px; min-width: 220px; }
+        #stats { position: absolute; top: 10px; left: 10px; text-align: left; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 5px; border: 1px solid #333; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="stats">
+        LIVES: <span id="livesDisplay">20</span> | CASH: <span id="moneyDisplay">$500</span><br>
+        WAVE: <span id="waveDisplay">1</span>
+    </div>
+
+    <canvas id="gameCanvas" width="1000" height="550"></canvas>
+    
+    <button id="speedToggle" class="speed-button" onclick="cycleSpeed()">SPEED: 1x</button>
+    <button id="startwave" class="circular-button">NEXT WAVE</button>
+    <button id="shopbutton" onclick="shopToggle()" class="circle-button">SHOP</button>
+    
+    <div id="upgradeMenu">
+        <strong id="upType">Tower</strong> (Lvl <span id="upLvl">1</span>)<br>
+        <button class="buy-btn" id="upBtn" onclick="applyUpgrade()">UPGRADE: $<span id="upCost">0</span></button>
+        <button class="buy-btn" style="background: #e67e22" onclick="sellTower()">SELL FOR: $<span id="sellVal">0</span></button>
+        <button class="buy-btn" style="background:#7f8c8d" onclick="$('#upgradeMenu').hide()">CLOSE</button>
+    </div>
+
+    <div id="shopcontainer">
+        <h3 style="margin-top:0">SHOP</h3>
+        <button class="buy-btn" onclick="buyTurret('Basic', 100)">Basic - $100</button>
+        <button class="buy-btn" onclick="buyTurret('Sniper', 200)" style="background:#006400">Sniper - $200</button>
+        <button class="buy-btn" onclick="buyTurret('Rapid', 300)" style="background:#ff8c00">Rapid Fire - $300</button>
+        <button class="buy-btn" onclick="buyTurret('Heavy', 400)" style="background:#8b0000">Heavy Cannon - $400</button>
+        <button class="buy-btn" onclick="buyTurret('Tesla', 350)" style="background:#3498db">Tesla Coil - $350</button>
+        <button class="buy-btn" onclick="buyTurret('Poison', 250)" style="background:#27ae60">Poison Dart - $250</button>
+        <button class="buy-btn" onclick="buyTurret('Village', 250)" style="background:#8e44ad">Village - $250</button>
+        <button class="buy-btn" onclick="buyTurret('Farm', 300)" style="background:#f1c40f; color:black">Golden Farm - $300</button>
+        <hr>
+        <button class="buy-btn" style="background:#e67e22" onclick="buySpell('Arrows', 75)">Arrows - $75</button>
+        <p id="hint" style="font-size: 11px; color: darkred; display:none; font-weight:bold;">PLACEMENT ACTIVE</p>
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const gridsize = 50;
+        let enemies = [], towers = [], projectiles = [];
+        let money = 500, lives = 20, waveNumber = 1, timeScale = 1;
+        let canPlace = false, waveactive = false, pendingTurret = null, activeSpell = null, mousePos = {x:0, y:0};
+        let selectedTower = null;
+
+        const pathCoords = [{x:0,y:3}, {x:1,y:3}, {x:2,y:3}, {x:3,y:3}, {x:4,y:3}, {x:4,y:4}, {x:4,y:5}, {x:4,y:6}, {x:4,y:7}, {x:5,y:7}, {x:6,y:7}, {x:7,y:7}, {x:8,y:7}, {x:8,y:6}, {x:8,y:5}, {x:8,y:4}, {x:8,y:3}, {x:9,y:3}, {x:10,y:3}, {x:11,y:3}, {x:12,y:3}, {x:12,y:4}, {x:12,y:5}, {x:12,y:6}, {x:12,y:7}, {x:13,y:7}, {x:14,y:7}, {x:15,y:7}, {x:16,y:7}, {x:16,y:6}, {x:16,y:5}, {x:16,y:4}, {x:16,y:3}, {x:17,y:3}, {x:18,y:3}, {x:19,y:3}];
+
+        function cycleSpeed() {
+            if (timeScale === 1) timeScale = 5;
+            else if (timeScale === 5) timeScale = 50;
+            else timeScale = 1;
+            
+            $("#speedToggle").text("SPEED: " + timeScale + "x");
+            let colors = { 1: "#f39c12", 5: "#e67e22", 50: "#e74c3c" };
+            $("#speedToggle").css("background-color", colors[timeScale]);
+        }
+
+        class Enemy {
+            constructor(wave) {
+                this.pathIndex = 0;
+                this.x = pathCoords[0].x * gridsize + 25; this.y = pathCoords[0].y * gridsize + 25;
+                this.maxHp = 50 + (wave * 45); this.hp = this.maxHp;
+                this.speed = 1.5 + (wave * 0.06);
+                this.poisonTicks = 0;
+                this.isArrowTarget = false;
+            }
+            update() {
+                let scaledSpeed = this.speed * timeScale;
+                if (this.poisonTicks > 0) { 
+                    this.hp -= (0.7 * timeScale); 
+                    this.poisonTicks -= timeScale; 
+                }
+                if (this.pathIndex < pathCoords.length - 1) {
+                    const t = pathCoords[this.pathIndex + 1], tx = t.x * gridsize + 25, ty = t.y * gridsize + 25;
+                    const dx = tx - this.x, dy = ty - this.y, dist = Math.sqrt(dx*dx+dy*dy);
+                    if (dist > scaledSpeed) { 
+                        this.x += (dx/dist)*scaledSpeed; 
+                        this.y += (dy/dist)*scaledSpeed; 
+                    } else { this.pathIndex++; this.x = tx; this.y = ty; }
+                } else { lives--; updateUI(); enemies.splice(enemies.indexOf(this), 1); }
+            }
+            draw() {
+                ctx.fillStyle = "red"; ctx.fillRect(this.x-15, this.y-22, 30, 4);
+                ctx.fillStyle = "lime"; ctx.fillRect(this.x-15, this.y-22, 30*(this.hp/this.maxHp), 4);
+                ctx.fillStyle = this.poisonTicks > 0 ? "#27ae60" : "#2a52be";
+                ctx.beginPath(); ctx.arc(this.x, this.y, 12, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mousePos.x = e.clientX - r.left; mousePos.y = e.clientY - r.top; });
+        canvas.addEventListener('click', () => { 
+            if (activeSpell === 'Arrows') { castArrows(mousePos.x, mousePos.y); return; }
+            if (canPlace) return;
+            let found = towers.find(t => Math.sqrt((t.x - mousePos.x)**2 + (t.y - mousePos.y)**2) < 25);
+            if(found) {
+                selectedTower = found; $("#upgradeMenu").show(); $("#upType").text(found.type); $("#upLvl").text(found.lvl); $("#upCost").text(found.lvl * 150); $("#sellVal").text(Math.floor(found.totalSpent * 0.75));
+            } else { $("#upgradeMenu").hide(); }
+        });
+
+        function applyUpgrade() {
+            let cost = selectedTower.lvl * 150;
+            if (money >= cost) { money -= cost; selectedTower.totalSpent += cost; selectedTower.lvl++; if (selectedTower.dmg > 0) selectedTower.dmg *= 1.45; if (selectedTower.fireRate > 0) selectedTower.fireRate *= 0.85; if (selectedTower.type === 'Village') selectedTower.range += 25; updateUI(); $("#upLvl").text(selectedTower.lvl); $("#upCost").text(selectedTower.lvl * 150); $("#sellVal").text(Math.floor(selectedTower.totalSpent * 0.75)); }
+        }
+
+        function sellTower() { if (selectedTower) { money += Math.floor(selectedTower.totalSpent * 0.75); towers.splice(towers.indexOf(selectedTower), 1); selectedTower = null; $("#upgradeMenu").hide(); updateUI(); } }
+
+        function buySpell(type, cost) { if (money >= cost) { money -= cost; updateUI(); activeSpell = type; $("#shopcontainer").fadeOut(200); $("#hint").show(); } }
+        
+        function castArrows(x, y) { 
+            enemies.forEach(e => { 
+                if (Math.sqrt((e.x-x)**2 + (e.y-y)**2) < 100) {
+                    e.hp -= 150;
+                    e.isArrowTarget = true;
+                }
+            }); 
+            activeSpell = null; $("#hint").hide(); 
+        }
+
+        function buyTurret(type, cost) { if (money >= cost) { pendingTurret = { type, cost }; canPlace = true; $("#shopcontainer").fadeOut(200); $("#hint").show(); canvas.addEventListener('click', handlePlacementClick); } }
+
+        function handlePlacementClick() {
+            if (!canPlace || !pendingTurret) return;
+            const gx = Math.floor(mousePos.x / gridsize), gy = Math.floor(mousePos.y / gridsize);
+            if (!pathCoords.some(p => p.x === gx && p.y === gy)) {
+                let s = { x: gx*gridsize+25, y: gy*gridsize+25, lastFire:0, type: pendingTurret.type, lvl: 1, totalSpent: pendingTurret.cost };
+                switch(s.type) {
+                    case 'Basic': s.range = 150; s.fireRate = 800; s.color = "black"; s.dmg = 25; break;
+                    case 'Sniper': s.range = 350; s.fireRate = 2000; s.color = "darkgreen"; s.dmg = 120; break;
+                    case 'Rapid': s.range = 110; s.fireRate = 200; s.color = "orange"; s.dmg = 12; break;
+                    case 'Heavy': s.range = 210; s.fireRate = 1600; s.color = "darkred"; s.dmg = 200; break;
+                    case 'Tesla': s.range = 140; s.fireRate = 1000; s.color = "#3498db"; s.dmg = 40; break;
+                    case 'Poison': s.range = 160; s.fireRate = 1200; s.color = "#27ae60"; s.dmg = 10; break;
+                    case 'Village': s.range = 160; s.fireRate = 0; s.color = "#8e44ad"; s.dmg = 0; break;
+                    case 'Farm': s.range = 0; s.fireRate = 0; s.color = "#f1c40f"; s.dmg = 0; break;
+                }
+                towers.push(s); money -= pendingTurret.cost; updateUI();
+                canPlace = false; pendingTurret = null; $("#hint").hide(); canvas.removeEventListener('click', handlePlacementClick);
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            pathCoords.forEach(p => { ctx.fillStyle = "#8B4513"; ctx.fillRect(p.x*gridsize, p.y*gridsize, gridsize, gridsize); });
+
+            towers.forEach(t => {
+                ctx.fillStyle = t.color;
+                if(t.type === 'Village' || t.type === 'Farm' || t.type === 'Tesla') {
+                    ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI*2); ctx.fill();
+                } else { ctx.fillRect(t.x-15, t.y-15, 30, 30); }
+                ctx.fillStyle = "white"; ctx.font = "bold 10px Arial"; ctx.fillText("L"+t.lvl, t.x-8, t.y+3);
+
+                if (t.dmg > 0 || t.type === 'Tesla') {
+                    let rate = t.fireRate / timeScale;
+                    towers.forEach(v => { if (v.type === 'Village' && Math.sqrt((t.x-v.x)**2 + (t.y-v.y)**2) < v.range) rate *= 0.6; });
+
+                    let target = null, minDist = t.range;
+                    enemies.forEach(e => { const d = Math.sqrt((e.x-t.x)**2 + (e.y-t.y)**2); if (d < minDist) { minDist = d; target = e; } });
+
+                    if (target && Date.now() - t.lastFire > rate) {
+                        if (t.type === 'Tesla') {
+                            enemies.forEach(e => { if(Math.sqrt((e.x-t.x)**2 + (e.y-t.y)**2) < t.range) { 
+                                e.hp -= (t.dmg * (timeScale === 50 ? 2 : 1)); // Compensate for tick rate in hyper speed
+                                ctx.strokeStyle = "cyan"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(e.x, e.y); ctx.stroke(); 
+                            }});
+                        } else { projectiles.push({ x: t.x, y: t.y, target, speed: 8 * timeScale, reached: false, dmg: t.dmg, type: t.type }); }
+                        t.lastFire = Date.now();
+                    }
+                }
+            });
+
+            projectiles.forEach((p, i) => {
+                const dx = p.target.x-p.x, dy = p.target.y-p.y, dist = Math.sqrt(dx*dx+dy*dy);
+                if (dist < (12 * timeScale)) { 
+                    p.target.hp -= p.dmg; 
+                    if (p.type === 'Poison') p.target.poisonTicks = 180; 
+                    projectiles.splice(i, 1); 
+                } 
+                else { p.x += (dx/dist)*p.speed; p.y += (dy/dist)*p.speed; ctx.fillStyle = p.type === 'Poison' ? "#2ecc71" : "yellow"; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill(); }
+            });
+
+            enemies = enemies.filter(e => { 
+                if (e.hp <= 0) { if (!e.isArrowTarget) { money += 25; } updateUI(); return false; } 
+                return true; 
+            });
+            enemies.forEach(e => { e.update(); e.draw(); });
+
+            if (lives <= 0) { ctx.fillStyle="rgba(0,0,0,0.7)"; ctx.fillRect(0,0,1000,550); ctx.fillStyle="white"; ctx.font="60px Arial"; ctx.fillText("GAME OVER", 330, 275); return; }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateUI() { $("#moneyDisplay").text("$"+money); $("#livesDisplay").text(lives); $("#waveDisplay").text(waveNumber); }
+        function shopToggle() { $("#shopcontainer").fadeToggle(200); }
+        
+        $("#startwave").click(() => {
+            if (waveactive || lives <= 0) return;
+            towers.forEach(t => { if(t.type === 'Farm') money += (200 * t.lvl); });
+            waveactive = true; let s = 0; const count = Math.floor(Math.random() * 10) + 5 + (waveNumber * 2); updateUI();
+            const inv = setInterval(() => { 
+                enemies.push(new Enemy(waveNumber)); 
+                if (++s >= count) { clearInterval(inv); waveactive = false; waveNumber++; updateUI(); } 
+            }, 750 / timeScale);
+        });
+        gameLoop();
+    </script>
+</body>
+</html>
